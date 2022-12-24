@@ -1,10 +1,10 @@
 # TelegramBot
-
+Ссылка в телеграм: @math_by_Khoryzhev_bot
 ### Особенности сборки:
 ###### Создаем webhook:
 ngrok http 5000
 
-curl --location --request POST 'https://api.telegram.org/bot5695797600:AAE1xFaFM_B99YKRuYTspYXDs1ILYgNrkDA/setWebhook' --header 'Content-Type: application/json' --data-raw '{"url": "<HTTPS адрес ngrok>"}'
+curl --location --request POST 'https://api.telegram.org/bot5695797600:<BOT TOKEN>/setWebhook' --header 'Content-Type: application/json' --data-raw '{"url": "<HTTPS адрес ngrok>"}'
 
 
 ###### Запускаем бота:
