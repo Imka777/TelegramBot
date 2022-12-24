@@ -19,27 +19,27 @@ app = Flask(__name__)
 
 mc = MongoClient(get_from_env("MONGO_LINK"))
 db = mc['main']
-tasks = db['tasks']
-users = db['users']
+tasks = db['tasks'] # коллекция задач из mongo
+users = db['users'] # коллекция пользователей из mongo
 
 
 def send_message(chat_id, text, mode=1):
     method = "sendMessage"
     token = get_from_env("TG_BOT_TOKEN")
     url = f"https://api.telegram.org/bot{token}/{method}"
-    if mode == 1:
+    if mode == 1: # Кнопки посмотреть баллы и решить задачу
         data = {"chat_id": chat_id, "text": text,
                 "reply_markup": json.dumps({"keyboard": [[{"text": "Посмотреть баллы"}, {"text": "Решить задачу"}]],
                                             "resize_keyboard": True, "one_time_keyboard": True})}
-    elif mode == 2:
+    elif mode == 2: # Кнопки ввести ответ и поменять задачу
         data = {"chat_id": chat_id, "text": text,
                 "reply_markup": json.dumps({"keyboard": [[{"text": "Ввести ответ"},
                                                           {"text": "Поменять задачу"}]],
                                             "resize_keyboard": True, "one_time_keyboard": True})}
-    elif mode == 3 or mode == 5:
+    elif mode == 3 or mode == 5: # Ожидаем ввода пользователя
         data = {"chat_id": chat_id, "text": text}
 
-    elif mode == 4:
+    elif mode == 4: # Кнопки да и нет (менять ли задачу?)
         data = {"chat_id": chat_id, "text": text,
                 "reply_markup": json.dumps({"keyboard": [[{"text": "Да"},
                                                           {"text": "Нет"}]],
@@ -49,10 +49,11 @@ def send_message(chat_id, text, mode=1):
 
 
 @app.route('/', methods=['POST'])
-def handle_query():
-    chat_id = request.json["message"]["chat"]["id"]
-    user_text = request.json["message"]["text"]
-    if user_text == "/start":
+def handle_query(): # Обработка пользовательских сообщений
+    chat_id = request.json["message"]["chat"]["id"] # id чата
+    user_text = request.json["message"]["text"] # текст пользователя
+    
+    if user_text == "/start": # Новый пользователь
         if users.find_one({"chat_id": chat_id}) is None:
             count_tasks = tasks.count_documents({})
             users.insert_one({"chat_id": chat_id, "num_of_task": -1,
@@ -72,34 +73,35 @@ def handle_query():
 
         return {'ok': True}
 
-    user_info = users.find_one({"chat_id": chat_id})
-    user_mode = user_info["mode"]
+    user_info = users.find_one({"chat_id": chat_id}) #информация о пользователе
+    user_mode = user_info["mode"] # состояние в котором находится диалог
 
-    if user_mode == 1:
+    if user_mode == 1: # Просмотр баллов или получение новой задачи
         if user_text == "Посмотреть баллы":
             score = user_info["score"]
             send_message(chat_id, "Твои баллы: " + str(score), mode=1)
 
         elif user_text == "Решить задачу":
-            unsolved_tasks = user_info["unsolved"]
+            unsolved_tasks = user_info["unsolved"] # список еще не решенных задач пользователя
             if not unsolved_tasks:
                 send_message(chat_id, "Ты просмотрел все задачи из базы:", mode=1)
                 return {'ok': True}
-            num_of_task = random.choice(unsolved_tasks)
+            
+            num_of_task = random.choice(unsolved_tasks) # случайно выбираем задачу
             unsolved_tasks.remove(num_of_task)
             users.update_one({"chat_id": chat_id}, {'$set': {"unsolved": unsolved_tasks, "num_of_task": num_of_task,
-                                                             "mode": 2}})
+                                                             "mode": 2}}) # меняем состояние пользователя
             now_task = tasks.find_one({"number": num_of_task})
             max_score = now_task["score"]
             text_of_task = now_task["text"]
             send_message(chat_id, "Максимальный балл за задачу: {}\n\n"
                                   "Задача:\n{}"
-                         .format(max_score, text_of_task), mode=2)
+                         .format(max_score, text_of_task), mode=2) # выводим задачу и балл за нее
 
         else:
             send_message(chat_id, "Не понимаю тебя, выбери:", mode=1)
 
-    elif user_mode == 2:
+    elif user_mode == 2: # Выбор между вводом ответа и заменой задачи
         if user_text == "Ввести ответ":
             users.update_one({"chat_id": chat_id}, {'$set': {"mode": 3}})
             send_message(chat_id, "Ответ - число. Eсли получается нецелое, то вводить через точку\n"
@@ -108,24 +110,24 @@ def handle_query():
         elif user_text == "Поменять задачу":
             users.update_one({"chat_id": chat_id}, {'$set': {"mode": 4}})
             send_message(chat_id, "Потеряешь 0.5 баллов и больше не сможешь решить эту задачу.\n "
-                                  "Поменять?", mode=4)
+                                  "Поменять?", mode=4) 
 
         else:
             send_message(chat_id, "Не понимаю тебя, выбери:", mode=2)
 
-    elif user_mode == 3:
+    elif user_mode == 3: # Ждем ответ пользователя
         num_of_task = user_info["num_of_task"]
-        num_of_tries = int(user_info["tries"])
+        num_of_tries = int(user_info["tries"]) # число оставшихся попыток на данную задачу
         now_task = tasks.find_one({"number": num_of_task})
         answer = now_task["answer"]
-        if str(answer) == user_text:
-            addition_score = now_task["score"] * num_of_tries / 5
-            score = user_info["score"] + addition_score
+        if str(answer) == user_text: # правильный ответ
+            addition_score = now_task["score"] * num_of_tries / 5 
+            score = user_info["score"] + addition_score # обновленное число баллов 
             users.update_one({"chat_id": chat_id}, {'$set': {"mode": 1, "score": score, "num_of_task": -1, "tries": 5}})
             send_message(chat_id, "Правильно! Молодец! \n"
                                   "Баллов получено: " + str(addition_score) + "\n"
                                   "Выбери:", mode=1)
-        else:
+        else: # неправильный ответ
             if num_of_tries != 1:
                 num_of_tries -= 1
             score = now_task["score"] * num_of_tries / 5
@@ -133,11 +135,11 @@ def handle_query():
             send_message(chat_id, "Неверно.\n Попробуй еще раз\nПолучишь баллов, если решишь со следующей попытки: "
                          + str(score), mode=2)
 
-    elif user_mode == 4:
+    elif user_mode == 4: # Менять ли задачу?
         if user_text == "Да":
             user_info = users.find_one({"chat_id": chat_id})
             score = user_info["score"] - 0.5
-            problems = user_info["problems"]
+            problems = user_info["problems"] # проблемные задачи сохраняются
             if problems == 0:
                 problems = [user_info["num_of_task"]]
             else:
@@ -153,7 +155,7 @@ def handle_query():
         else:
             send_message(chat_id, "Не понимаю тебя, выбери:", mode=2)
 
-    elif user_mode == 5:
+    elif user_mode == 5: # Ждем ввода никнейма
         users.update_one({"chat_id": chat_id}, {'$set': {"mode": 1, "username": user_text}})
         send_message(chat_id, "Зафиксировал, выбери:", mode=1)
 
