@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  servic_name:
+    build:
+      context: .
+    image: tg_bot_image:latest
+    ports:
+      - 5000:5000
+    container_name: tg_bot_container
